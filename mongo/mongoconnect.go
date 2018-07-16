@@ -4,12 +4,7 @@ import (
 	"log"
 	mgdb "gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
-	"github.com/akankshadokania/tweetstack/model"
-	"fmt"
-)
 
-const(
-	COLLECTION ="Questions"
 )
 
 
@@ -31,41 +26,40 @@ func (m *MongodbConnect)Connect() {
 }
 
 
-func (m *MongodbConnect) FindById(id string) (model.Questions,error){
+func (m *MongodbConnect) FindById(id string, collectionName string) (interface{},error){
 
-	var question model.Questions
-	err := db.C(COLLECTION).FindId(bson.ObjectIdHex(id)).One(&question)
+	var object interface{}
+	err := db.C(collectionName).FindId(bson.ObjectIdHex(id)).One(&object)
 
-	return question, err
+	return object, err
 }
 
-func (m *MongodbConnect) Insert(question model.Questions) error {
+func (m *MongodbConnect) Insert(obj interface{}, collectionName string) error {
 
-	fmt.Printf("Questions are %v", question)
-	err := db.C(COLLECTION).Insert(&question)
+	err := db.C(collectionName).Insert(&obj)
 	return err
 }
 
-func (m *MongodbConnect) Delete(question model.Questions) error{
+func (m *MongodbConnect) Delete(obj interface{}, collectionName string) error{
 
-	err := db.C(COLLECTION).Remove(&question)
+	err := db.C(collectionName).Remove(&obj)
 
 	return err
 }
 
-func (m *MongodbConnect) Update(question model.Questions) error{
+func (m *MongodbConnect) Update(obj interface{}, ID bson.ObjectId, collectionName string) error{
 
-	err := db.C(COLLECTION).UpdateId(question.ID,&question)
+	err := db.C(collectionName).UpdateId(ID,&obj)
 	return err
 }
 
 
-func (m *MongodbConnect) FindAll() ([]model.Questions, error){
+func (m *MongodbConnect) FindAll(collectionName string) ([]interface{}, error){
 
-	var questions []model.Questions
-	err := db.C(COLLECTION).Find(bson.M{}).All(&questions)
+	var objects []interface{}
+	err := db.C(collectionName).Find(bson.M{}).All(&objects)
 
-	return questions, err
+	return objects, err
 
 }
 

@@ -9,5 +9,6 @@ type Questions struct{
 	User        string        `bson:"user" json:"user"`
 	AnswerId    string        `bson:"answerId" json:"answerId"`
     Upvotes     string        `bson:"upvotes" json:"upvotes"`
+	Tags        []interface{}     `bson:"tags" json:"tags"`
 }
 
