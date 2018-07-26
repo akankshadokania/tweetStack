@@ -9,13 +9,8 @@ import (
 	"fmt"
 	"gopkg.in/mgo.v2/bson"
 	"github.com/gorilla/mux"
-	"reflect"
 
 	"github.com/akankshadokania/tweetStack/utils"
-	"strings"
-)
-const(
-	QuestionCollection = "questions"
 )
 
 
@@ -29,34 +24,46 @@ func CreateQuestion(w http.ResponseWriter, r *http.Request){
 	err := json.NewDecoder(r.Body).Decode(&question)
 	if err != nil {
 		fmt.Printf("Alert: Error")
-		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
-		return
-	}
-	fmt.Printf("Questions: %v", question)
-	question.ID = bson.NewObjectId()
-	if err := mongodb.Insert(question, QuestionCollection); err != nil {
-		respondWithError(w, http.StatusInternalServerError, err.Error())
+		utils.RespondWithError(w, http.StatusInternalServerError, " Error decoding request body: Invalid request payload")
 		return
 	}
 
-	respondWithJson(w, http.StatusCreated, question)
+	question.ID = bson.NewObjectId()
+	if err := mongodb.Insert(question, model.QuestionCollection); err != nil {
+		utils.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	utils.RespondWithJson(w, http.StatusCreated, question)
 	return
 
 }
 
 func DeleteQuestion(w http.ResponseWriter, r *http.Request) {
 
-	defer r.Body.Close()
+	params := mux.Vars(r)
 	var question model.Questions
-	if err := json.NewDecoder(r.Body).Decode(&question); err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+	obj, err := mongodb.FindById(params["id"],model.QuestionCollection)
+	if obj == nil{
+		utils.RespondWithError(w, http.StatusBadRequest,"Cannot find the question to be deleted")
+		fmt.Printf("Cannot find question with Id %s", params["id"])
 		return
 	}
-	if err := mongodb.Delete(question,QuestionCollection); err != nil {
-		respondWithError(w, http.StatusInternalServerError, err.Error())
+	jsonData, err := json.Marshal(obj)
+	if err != nil{
+		utils.RespondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondWithJson(w, http.StatusOK, map[string]string{"result": "success"})
+	json.Unmarshal(jsonData, &question)
+	if err := mongodb.Delete(obj,model.QuestionCollection); err != nil {
+		utils.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	err = question.RemoveRefAnswers()
+	if err != nil{
+		utils.RespondWithError(w, http.StatusInternalServerError, err.Error())
+	}
+	utils.RespondWithJson(w, http.StatusOK, map[string]string{"result": "success"})
 }
 
 
@@ -64,102 +71,72 @@ func UpdateQuestion(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	var question model.Questions
 	if err := json.NewDecoder(r.Body).Decode(&question); err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid request payload")
+		utils.RespondWithError(w, http.StatusBadRequest, "Invalid request payload")
 		return
 	}
-	if err := mongodb.Update(question,question.ID,QuestionCollection); err != nil {
-		respondWithError(w, http.StatusInternalServerError, err.Error())
+	if err := mongodb.Update(question,question.ID,model.QuestionCollection); err != nil {
+		utils.RespondWithError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondWithJson(w, http.StatusOK, map[string]string{"result": "success"})
+	utils.RespondWithJson(w, http.StatusOK, map[string]string{"result": "success"})
 }
 
 func FindQuestion(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	fmt.Print("coming here")
 	var question model.Questions
-	obj, err := mongodb.FindById(params["id"],QuestionCollection)
-	objElem := reflect.ValueOf(obj)
-	questionKeys := objElem.MapKeys()
-
-	for _, key := range questionKeys{
-		if key.String() == "_id"{
-			value := objElem.MapIndex(key).Interface()
-			idKey := "ID"
-			err := utils.SetField(&question, idKey, value)
-			if err != nil {
-				fmt.Printf("Cannot set ID for struct %s\n",  err.Error())
-				return
-			}
-			continue
-		}
-		fmt.Printf("The value is %s \n",objElem.MapIndex(key).Interface())
-		fmt.Printf("The type of field %s is %s ,", key.String(),objElem.MapIndex(key).Kind())
-		err = utils.SetField(&question, strings.Title(key.String()), objElem.MapIndex(key).Interface())
-		if err != nil {
-			fmt.Printf("Cannot set %s for struct %s \n", strings.Title(key.String()), err.Error())
-			return
-		}
-	}
-
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Invalid question ID")
+	obj, err := mongodb.FindById(params["id"],model.QuestionCollection)
+	if err != nil{
+		utils.RespondWithError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-
-	respondWithJson(w, http.StatusOK, question)
+	if obj == nil{
+		utils.RespondWithJson(w, http.StatusBadRequest, "No question found with the given ID. Question doesn't exist")
+		return
+	}
+	jsonData, errMsg := json.Marshal(obj)
+	if errMsg != nil{
+		utils.RespondWithError(w, http.StatusInternalServerError, errMsg.Error())
+		return
+	}
+	err = json.Unmarshal(jsonData, &question)
+	if err != nil{
+		utils.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	utils.RespondWithJson(w, http.StatusOK, question)
 }
 
-func AllQuestions(w http.ResponseWriter, r *http.Request) {
-	objects, err := mongodb.FindAll(QuestionCollection)
+func FindAllQuestions(w http.ResponseWriter, r *http.Request) {
+
+	objects, err := mongodb.FindAll(model.QuestionCollection)
+
+	if err != nil {
+		utils.RespondWithError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 
 	var questions []model.Questions
 	for i := 0; i < len(objects); i++{
 		var question model.Questions
-		objElem := reflect.ValueOf(objects[i])
-		questionKeys := objElem.MapKeys()
-
-		for _, key := range questionKeys{
-			if key.String() == "_id"{
-				value := objElem.MapIndex(key).Interface()
-				idKey := "ID"
-				err := utils.SetField(&question, idKey, value)
-				if err != nil {
-					fmt.Printf("Cannot set ID for struct %s",  err.Error())
-					return
-				}
-				continue
-			}
-			err = utils.SetField(&question, strings.Title(key.String()), objElem.MapIndex(key).Interface())
-			if err != nil {
-				fmt.Printf("Cannot set %s for struct %s", strings.Title(key.String()), err.Error())
-				return
-			}
+		jsonData, err := json.Marshal(objects[i])
+		if err != nil{
+			utils.RespondWithError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		errMsg := json.Unmarshal(jsonData, &question)
+		if errMsg != nil{
+			utils.RespondWithError(w, http.StatusInternalServerError, errMsg.Error())
+			return
 		}
 		questions = append(questions, question)
-
 	}
 
 
-	fmt.Printf("The questions are %s", questions)
-	if err != nil {
-		respondWithError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	respondWithJson(w, http.StatusOK, questions)
+	utils.RespondWithJson(w, http.StatusOK, questions)
 
 }
 
 
-func respondWithError(w http.ResponseWriter, code int, msg string) {
-	respondWithJson(w, code, map[string]string{"error": msg})
-}
 
-func respondWithJson(w http.ResponseWriter, code int, payload interface{}) {
-	response, _ := json.Marshal(payload)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	w.Write(response)
-}
+
 
